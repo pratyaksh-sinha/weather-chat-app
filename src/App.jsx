@@ -46,12 +46,30 @@ function App() {
   };
 
   const handleClearChat = () => {
-    // Clear messages only for the active chat
     setChats(prevChats => {
       const newChats = { ...prevChats };
       newChats[activeChatId].messages = [];
       return newChats;
     });
+  };
+
+  // --- This function was missing and is now restored ---
+  const handleDeleteChat = (chatIdToDelete) => {
+    if (!window.confirm("Are you sure you want to delete this chat?")) {
+      return;
+    }
+    const newChats = { ...chats };
+    delete newChats[chatIdToDelete];
+    setChats(newChats);
+
+    if (activeChatId === chatIdToDelete) {
+      const remainingChatIds = Object.keys(newChats);
+      if (remainingChatIds.length > 0) {
+        setActiveChatId(remainingChatIds[0]);
+      } else {
+        handleNewChat();
+      }
+    }
   };
 
   const handleSendMessage = async (userInput) => {
@@ -63,13 +81,11 @@ function App() {
       text: userInput,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
-
     const agentPlaceholder = {
       sender: 'agent',
       text: '',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
-    
     setChats(prevChats => {
       const newChats = { ...prevChats };
       newChats[activeChatId].messages = [...newChats[activeChatId].messages, userMessage, agentPlaceholder];
@@ -77,38 +93,66 @@ function App() {
     });
 
     try {
-      // API Call logic remains here
-      const API_URL = "https://brief-thousands-sunset-9fcb1c78-485f-4967-ac04-2759a8fa1462.mastra.cloud/api/agents/weatherAgent/stream";
-      const headers = { 'Accept': '*/*', 'Content-Type': 'application/json', 'x-mastra-dev-playground': 'true' };
-      const body = { "messages": [{ "role": "user", "content": userInput }], "threadId": COLLEGE_ROLL_NUMBER };
-      const response = await fetch(API_URL, { method: 'POST', headers: headers, body: JSON.stringify(body) });
+      const API_URL = "https://millions-screeching-vultur.mastra.cloud/api/agents/weatherAgent/stream";
+      const headers = {
+        'x-mastra-dev-playground': 'true',
+        'Content-Type': 'application/json',
+      };
+      const body = {
+        "messages": [{ "role": "user", "content": userInput }],
+        "runId": "weatherAgent", "maxRetries": 2, "maxSteps": 5, "temperature": 0.5,
+        "topP": 1, "runtimeContext": {}, "threadId": 2, "resourceId": "weatherAgent"
+      };
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(body),
+      });
 
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-
+      
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+
         const chunk = decoder.decode(value);
-        setChats(prevChats => {
-          const newChats = { ...prevChats };
-          const activeMessages = newChats[activeChatId].messages;
-          const lastMessage = activeMessages[activeMessages.length - 1];
-          const updatedLastMessage = { ...lastMessage, text: lastMessage.text + chunk };
-          newChats[activeChatId].messages = [...activeMessages.slice(0, -1), updatedLastMessage];
-          return newChats;
-        });
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+        for (const line of lines) {
+          if (line.startsWith('0:')) {
+            try {
+              const textData = JSON.parse(line.substring(2));
+              setChats(prevChats => {
+                const newChats = { ...prevChats };
+                if (newChats[activeChatId]) {
+                  const activeMessages = newChats[activeChatId].messages;
+                  const lastMessage = activeMessages[activeMessages.length - 1];
+                  const updatedLastMessage = { ...lastMessage, text: lastMessage.text + textData };
+                  newChats[activeChatId].messages = [...activeMessages.slice(0, -1), updatedLastMessage];
+                }
+                return newChats;
+              });
+            } catch (e) {
+              console.error("Failed to parse JSON chunk from stream:", line);
+            }
+          }
+        }
       }
     } catch (err) {
       console.error("API Call failed:", err);
       setChats(prevChats => {
         const newChats = { ...prevChats };
-        const activeMessages = newChats[activeChatId].messages;
-        const lastMessage = activeMessages[activeMessages.length - 1];
-        const updatedLastMessage = { ...lastMessage, text: 'Sorry, something went wrong.' };
-        newChats[activeChatId].messages = [...activeMessages.slice(0, -1), updatedLastMessage];
+        if (newChats[activeChatId]) {
+          const activeMessages = newChats[activeChatId].messages;
+          const lastMessage = activeMessages[activeMessages.length - 1];
+          const updatedLastMessage = { ...lastMessage, text: 'Sorry, something went wrong.' };
+          newChats[activeChatId].messages = [...activeMessages.slice(0, -1), updatedLastMessage];
+        }
         return newChats;
       });
     } finally {
@@ -117,6 +161,9 @@ function App() {
   };
 
   const activeChat = chats[activeChatId];
+  if (!activeChat) {
+    return <div className="h-screen w-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">Loading...</div>;
+  }
 
   return (
     <div className={`h-screen flex flex-col font-sans bg-gray-50 dark:bg-gray-900`}>
@@ -127,27 +174,24 @@ function App() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
             </svg>
           </button>
-          <h1 className="text-xl font-semibold dark:text-white whitespace-nowrap">
-            {activeChat.title}
-          </h1>
+          <h1 className="text-xl font-semibold dark:text-white whitespace-nowrap">{activeChat.title}</h1>
         </div>
         <div className="flex items-center gap-4 whitespace-nowrap">
           <button onClick={handleThemeToggle} className="text-sm text-gray-500 dark:text-gray-300">
             {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
           </button>
-          {/* Clear Chat button is now restored */}
           <button onClick={handleClearChat} className="text-sm text-gray-500 dark:text-gray-300">
             Clear Chat
           </button>
         </div>
       </header>
-
       <div className="flex-1 flex overflow-hidden">
         <Sidebar
           chats={chats}
           activeChatId={activeChatId}
           onNewChat={handleNewChat}
           onSwitchChat={handleSwitchChat}
+          onDeleteChat={handleDeleteChat}
           isVisible={isSidebarOpen}
         />
         <div className="flex-1 flex flex-col relative">
