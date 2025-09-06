@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatWindow from './components/ChatWindow';
 
-const COLLEGE_ROLL_NUMBER = "PASTE-YOUR-ROLL-NUMBER-HERE";
+const COLLEGE_ROLL_NUMBER = "VU2F2122041";
 
 const createNewChat = (title) => ({
   title,
